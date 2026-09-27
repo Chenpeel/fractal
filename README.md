@@ -105,6 +105,8 @@ cargo run --release -- --help
 cargo test                                            # 65 个测试
 ```
 
+GUI 英文和中文分别使用打包进可执行文件的 Noto Sans 和 Noto Sans CJK SC, 无须安装字体, 也不依赖操作系统字体路径. 字体和 SIL OFL 1.1 许可证详见 [assets/fonts/README.md](assets/fonts/README.md); 发布包须附带 `assets/fonts/LICENSE-NotoSans.txt` 与 `assets/fonts/LICENSE-NotoSansCJK.txt`, 但运行时无须另带字体文件. 未打包 macOS 系统 SF 或苹方字体. Windows/Linux 的 GUI 运行仍需对应平台的图形环境, 打包字体不等于已经完成多平台构建验证.
+
 `render` 输出 PNG (小步数另有 SVG); `anim` 默认把 RGB 帧直接管道给 `ffmpeg` 生成 H.264 MP4 (无中间帧落盘), 没有 `ffmpeg` 时用 `--gif` (内置零依赖 GIF89a 编码器) 或 `--frames-dir` 输出 PNG 序列.
 
 ### 全部参数

@@ -57,30 +57,16 @@ pub fn field_label(label: &'static str) -> &'static str {
     }
 }
 
-/// Use fonts already licensed and installed by macOS; do not bundle Apple font binaries.
+/// Embed OFL-licensed Noto fonts so the GUI does not depend on platform font locations.
 pub fn init_fonts() -> Result<(), String> {
-    let load = |paths: &[&str]| -> Result<Font, String> {
-        let mut errors = Vec::new();
-        for path in paths {
-            match std::fs::read(path) {
-                Ok(bytes) => match load_ttf_font_from_bytes(&bytes) {
-                    Ok(font) => return Ok(font),
-                    Err(e) => errors.push(format!("{path}: {e}")),
-                },
-                Err(e) => errors.push(format!("{path}: {e}")),
-            }
-        }
-        Err(errors.join("; "))
-    };
-    let sf = load(&[
-        "/System/Library/Fonts/SFNS.ttf",
-        "/System/Library/Fonts/SFNSRounded.ttf",
-    ])?;
-    let pingfang = load(&[
-        "/System/Library/Fonts/PingFang.ttc",
-        "/System/Library/Fonts/STHeiti Light.ttc",
-    ])?;
-    let _ = FONTS.set((sf, pingfang));
+    if FONTS.get().is_some() {
+        return Ok(());
+    }
+    let en = load_ttf_font_from_bytes(include_bytes!("../assets/fonts/NotoSans-Regular.ttf"))
+        .map_err(|error| format!("Noto Sans: {error}"))?;
+    let zh = load_ttf_font_from_bytes(include_bytes!("../assets/fonts/NotoSansCJKsc-Regular.otf"))
+        .map_err(|error| format!("Noto Sans CJK SC: {error}"))?;
+    let _ = FONTS.set((en, zh));
     Ok(())
 }
 

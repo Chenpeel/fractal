@@ -124,7 +124,7 @@ async fn amain(
     frames_limit: Option<u32>,
     shot: Option<String>,
 ) {
-    ui::init_fonts().unwrap_or_else(|e| panic!("Failed to load Apple system fonts: {e}"));
+    ui::init_fonts().unwrap_or_else(|e| panic!("Failed to load bundled Noto fonts: {e}"));
     ui::set_language(language);
     let mut app = App::new(params);
     app.canvas = canvas;
@@ -343,7 +343,7 @@ impl App {
             overview_bake: None,
             note: Some((
                 tr(
-                    "Ready. Replay to watch the curve unfold.",
+                    "Ready. Replay to draw the curve.",
                     "就绪. 点击重播观看分形绘制.",
                 )
                 .to_string(),
