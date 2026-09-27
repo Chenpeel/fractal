@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yaml
+    permissions:
+      contents: read
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fractal-*
+          path: artifacts
+      - name: Package platform binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
+            source="artifacts/fractal-${target}"
+            test -s "${source}/LICENSE-NotoSans.txt"
+            test -s "${source}/LICENSE-NotoSansCJK.txt"
+            if [[ "${target}" == *windows* ]]; then
+              test -s "${source}/fractal.exe"
+              (cd "${source}" && zip -q "${GITHUB_WORKSPACE}/dist/fractal-${target}.zip" fractal.exe LICENSE-NotoSans.txt LICENSE-NotoSansCJK.txt)
+            else
+              test -s "${source}/fractal"
+              tar -czf "dist/fractal-${target}.tar.gz" -C "${source}" fractal LICENSE-NotoSans.txt LICENSE-NotoSansCJK.txt
+            fi
+          done
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" dist/* --clobber
+          else
+            gh release create "${TAG}" dist/* --verify-tag --title "${TAG}" --generate-notes
+          fi
