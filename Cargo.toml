@@ -1,0 +1,23 @@
+[package]
+name = "fun_fractal_base_direction"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "Turtle fractals driven by a number base and a direction number, with a Manim-like animation pipeline"
+
+[[bin]]
+name = "fractal"
+path = "src/main.rs"
+
+[dependencies]
+macroquad = "0.4"
+
+# Keep debug runs usable (the GUI and the fractal generator are CPU bound).
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
