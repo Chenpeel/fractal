@@ -1,14 +1,132 @@
 //! Tiny immediate-mode widgets for the interactive window, plus the GUI theme.
 //!
 //! The editing and parsing logic is pure (no macroquad calls), so it is unit tested without
-//! opening a window; `gui.rs` only feeds events and draws with a [`Theme`].
-//!
-//! The theme follows the canvas: `B` (or the `canvas:` button) switches the picture *and* the
-//! chrome between dark and light, so the framing, the pane and the strokes always agree.
+//! opening a window; `gui.rs` feeds events and draws with a [`Theme`].
 
 use macroquad::prelude::*;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 
 use fun_fractal_base_direction::palette::Canvas;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Language {
+    En,
+    Zh,
+}
+
+impl Language {
+    pub fn toggle(self) -> Self {
+        match self {
+            Self::En => Self::Zh,
+            Self::Zh => Self::En,
+        }
+    }
+}
+
+static CHINESE: AtomicBool = AtomicBool::new(false);
+static FONTS: OnceLock<(Font, Font)> = OnceLock::new();
+
+pub fn set_language(language: Language) {
+    CHINESE.store(language == Language::Zh, Ordering::Relaxed);
+}
+
+pub fn language() -> Language {
+    if CHINESE.load(Ordering::Relaxed) {
+        Language::Zh
+    } else {
+        Language::En
+    }
+}
+
+pub fn localized(en: &'static str, zh: &'static str) -> &'static str {
+    match language() {
+        Language::En => en,
+        Language::Zh => zh,
+    }
+}
+
+pub fn field_label(label: &'static str) -> &'static str {
+    match (language(), label) {
+        (Language::Zh, "base") => "进制",
+        (Language::Zh, "dir") => "方向",
+        (Language::Zh, "rule") => "规则",
+        (Language::Zh, "steps") => "步数",
+        (Language::Zh, "hue") => "色相",
+        _ => label,
+    }
+}
+
+/// Use fonts already licensed and installed by macOS; do not bundle Apple font binaries.
+pub fn init_fonts() -> Result<(), String> {
+    let load = |paths: &[&str]| -> Result<Font, String> {
+        let mut errors = Vec::new();
+        for path in paths {
+            match std::fs::read(path) {
+                Ok(bytes) => match load_ttf_font_from_bytes(&bytes) {
+                    Ok(font) => return Ok(font),
+                    Err(e) => errors.push(format!("{path}: {e}")),
+                },
+                Err(e) => errors.push(format!("{path}: {e}")),
+            }
+        }
+        Err(errors.join("; "))
+    };
+    let sf = load(&[
+        "/System/Library/Fonts/SFNS.ttf",
+        "/System/Library/Fonts/SFNSRounded.ttf",
+    ])?;
+    let pingfang = load(&[
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+    ])?;
+    let _ = FONTS.set((sf, pingfang));
+    Ok(())
+}
+
+fn app_font() -> Option<&'static Font> {
+    FONTS.get().map(|(en, zh)| match language() {
+        Language::En => en,
+        Language::Zh => zh,
+    })
+}
+
+pub fn draw_app_text(
+    text: impl AsRef<str>,
+    x: f32,
+    y: f32,
+    size: f32,
+    color: Color,
+) -> TextDimensions {
+    macroquad::text::draw_text_ex(
+        text,
+        x,
+        y,
+        TextParams {
+            font: app_font(),
+            font_size: size as u16,
+            color,
+            ..Default::default()
+        },
+    )
+}
+
+pub fn measure_app_text(text: impl AsRef<str>, size: u16) -> TextDimensions {
+    macroquad::text::measure_text(text, app_font(), size, 1.0)
+}
+
+fn draw_text(text: impl AsRef<str>, x: f32, y: f32, size: f32, color: Color) -> TextDimensions {
+    draw_app_text(text, x, y, size, color)
+}
+
+fn measure_text(
+    text: impl AsRef<str>,
+    _font: Option<&Font>,
+    size: u16,
+    _scale: f32,
+) -> TextDimensions {
+    measure_app_text(text, size)
+}
 
 pub const FIELD_H: f32 = 30.0;
 pub const LABEL_W: f32 = 104.0;
@@ -16,7 +134,10 @@ const MAX_LEN: usize = 40;
 
 /// `4096`, `2^30`, `1.5e6`, `2_000_000` -> a count.
 pub fn parse_count(text: &str) -> Option<u64> {
-    let t: String = text.chars().filter(|c| !c.is_whitespace() && *c != '_').collect();
+    let t: String = text
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '_')
+        .collect();
     if t.is_empty() {
         return None;
     }
@@ -42,14 +163,20 @@ pub fn parse_count(text: &str) -> Option<u64> {
 
 /// `-6`, `+4`, `12`.
 pub fn parse_int(text: &str) -> Option<i64> {
-    let t: String = text.chars().filter(|c| !c.is_whitespace() && *c != '_').collect();
+    let t: String = text
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '_')
+        .collect();
     let t = t.strip_prefix('+').unwrap_or(&t);
     t.parse().ok()
 }
 
 /// `0.35`, `.5`, `1`.
 pub fn parse_float(text: &str) -> Option<f64> {
-    let t: String = text.chars().filter(|c| !c.is_whitespace() && *c != '_').collect();
+    let t: String = text
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '_')
+        .collect();
     t.parse().ok()
 }
 
@@ -79,6 +206,8 @@ pub struct Theme {
     pub button_bg_active: Color,
     pub button_border: Color,
     pub button_text: Color,
+    pub accent_bg: Color,
+    pub accent_text: Color,
     pub overlay: Color,
     pub marker: Color,
     pub marker_dot: Color,
@@ -88,25 +217,27 @@ impl Theme {
     pub fn dark() -> Self {
         let rgba = |r: f32, g: f32, b: f32, a: f32| Color::new(r, g, b, a);
         Theme {
-            chrome_bg: rgba(0.031, 0.039, 0.063, 1.0),
-            panel_bg: rgba(0.043, 0.055, 0.086, 1.0),
-            panel_border: rgba(0.32, 0.40, 0.56, 0.9),
-            text_bright: rgba(0.90, 0.94, 1.0, 1.0),
-            text_dim: rgba(0.66, 0.74, 0.88, 1.0),
-            text_hint: rgba(0.56, 0.64, 0.79, 1.0),
-            text_warn: rgba(1.0, 0.85, 0.45, 1.0),
-            field_bg: rgba(0.055, 0.066, 0.11, 0.85),
-            field_bg_focus: rgba(0.10, 0.12, 0.20, 0.95),
-            field_border: rgba(0.35, 0.42, 0.55, 0.8),
-            field_border_focus: rgba(0.55, 0.75, 1.0, 0.95),
-            field_error: rgba(1.0, 0.38, 0.38, 0.95),
-            caret: rgba(0.90, 0.95, 1.0, 0.9),
-            button_bg: rgba(0.50, 0.70, 1.0, 0.12),
-            button_bg_hover: rgba(0.50, 0.70, 1.0, 0.22),
-            button_bg_active: rgba(0.50, 0.70, 1.0, 0.30),
-            button_border: rgba(0.45, 0.60, 0.85, 0.75),
-            button_text: rgba(0.92, 0.96, 1.0, 1.0),
-            overlay: rgba(0.01, 0.02, 0.04, 0.93),
+            chrome_bg: rgba(0.075, 0.082, 0.094, 1.0),
+            panel_bg: rgba(0.12, 0.13, 0.15, 1.0),
+            panel_border: rgba(0.30, 0.32, 0.35, 1.0),
+            text_bright: rgba(0.96, 0.97, 0.99, 1.0),
+            text_dim: rgba(0.77, 0.79, 0.83, 1.0),
+            text_hint: rgba(0.64, 0.67, 0.73, 1.0),
+            text_warn: rgba(1.0, 0.77, 0.39, 1.0),
+            field_bg: rgba(0.17, 0.18, 0.21, 1.0),
+            field_bg_focus: rgba(0.20, 0.22, 0.25, 1.0),
+            field_border: rgba(0.36, 0.38, 0.43, 1.0),
+            field_border_focus: rgba(0.45, 0.68, 1.0, 1.0),
+            field_error: rgba(1.0, 0.36, 0.39, 1.0),
+            caret: rgba(0.96, 0.97, 0.99, 1.0),
+            button_bg: rgba(0.22, 0.24, 0.28, 1.0),
+            button_bg_hover: rgba(0.28, 0.31, 0.36, 1.0),
+            button_bg_active: rgba(0.35, 0.45, 0.60, 1.0),
+            button_border: rgba(0.38, 0.40, 0.45, 1.0),
+            button_text: rgba(0.96, 0.97, 0.99, 1.0),
+            accent_bg: rgba(0.12, 0.40, 0.79, 1.0),
+            accent_text: rgba(1.0, 1.0, 1.0, 1.0),
+            overlay: rgba(0.07, 0.08, 0.10, 0.96),
             marker: rgba(1.0, 1.0, 1.0, 0.92),
             marker_dot: rgba(1.0, 0.85, 0.45, 1.0),
         }
@@ -115,25 +246,27 @@ impl Theme {
     pub fn light() -> Self {
         let rgba = |r: f32, g: f32, b: f32, a: f32| Color::new(r, g, b, a);
         Theme {
-            chrome_bg: rgba(0.90, 0.89, 0.86, 1.0),
-            panel_bg: rgba(0.97, 0.96, 0.94, 1.0),
-            panel_border: rgba(0.62, 0.62, 0.60, 0.9),
-            text_bright: rgba(0.11, 0.13, 0.18, 1.0),
-            text_dim: rgba(0.28, 0.31, 0.37, 1.0),
-            text_hint: rgba(0.42, 0.45, 0.50, 1.0),
-            text_warn: rgba(0.65, 0.36, 0.0, 1.0),
-            field_bg: rgba(1.0, 1.0, 1.0, 0.95),
+            chrome_bg: rgba(0.90, 0.92, 0.94, 1.0),
+            panel_bg: rgba(0.97, 0.98, 0.99, 1.0),
+            panel_border: rgba(0.78, 0.80, 0.83, 1.0),
+            text_bright: rgba(0.10, 0.12, 0.16, 1.0),
+            text_dim: rgba(0.29, 0.32, 0.37, 1.0),
+            text_hint: rgba(0.40, 0.43, 0.48, 1.0),
+            text_warn: rgba(0.59, 0.32, 0.02, 1.0),
+            field_bg: rgba(1.0, 1.0, 1.0, 1.0),
             field_bg_focus: rgba(1.0, 1.0, 1.0, 1.0),
-            field_border: rgba(0.70, 0.70, 0.68, 0.95),
-            field_border_focus: rgba(0.16, 0.38, 0.78, 0.95),
-            field_error: rgba(0.78, 0.15, 0.15, 0.95),
-            caret: rgba(0.12, 0.15, 0.22, 0.9),
-            button_bg: rgba(0.20, 0.40, 0.80, 0.10),
-            button_bg_hover: rgba(0.20, 0.40, 0.80, 0.20),
-            button_bg_active: rgba(0.20, 0.40, 0.80, 0.30),
-            button_border: rgba(0.35, 0.45, 0.65, 0.80),
+            field_border: rgba(0.74, 0.77, 0.81, 1.0),
+            field_border_focus: rgba(0.12, 0.38, 0.78, 1.0),
+            field_error: rgba(0.76, 0.12, 0.16, 1.0),
+            caret: rgba(0.10, 0.12, 0.16, 1.0),
+            button_bg: rgba(0.90, 0.92, 0.95, 1.0),
+            button_bg_hover: rgba(0.83, 0.88, 0.95, 1.0),
+            button_bg_active: rgba(0.74, 0.83, 0.95, 1.0),
+            button_border: rgba(0.72, 0.75, 0.80, 1.0),
             button_text: rgba(0.10, 0.13, 0.20, 1.0),
-            overlay: rgba(0.93, 0.92, 0.89, 0.96),
+            accent_bg: rgba(0.09, 0.38, 0.77, 1.0),
+            accent_text: rgba(1.0, 1.0, 1.0, 1.0),
+            overlay: rgba(0.96, 0.97, 0.99, 0.97),
             marker: rgba(0.10, 0.12, 0.18, 0.95),
             marker_dot: rgba(0.80, 0.35, 0.0, 1.0),
         }
@@ -153,7 +286,67 @@ impl Theme {
     }
 }
 
-/// A labelled single-line text field.
+pub fn rounded_rect(rect: Rect, radius: f32, color: Color) {
+    let r = radius.clamp(0.0, rect.w.min(rect.h) * 0.5);
+    if r < 1.0 {
+        draw_rectangle(rect.x, rect.y, rect.w, rect.h, color);
+        return;
+    }
+    draw_rectangle(rect.x + r, rect.y, rect.w - 2.0 * r, rect.h, color);
+    draw_rectangle(rect.x, rect.y + r, rect.w, rect.h - 2.0 * r, color);
+    for x in [rect.x + r, rect.x + rect.w - r] {
+        for y in [rect.y + r, rect.y + rect.h - r] {
+            draw_circle(x, y, r, color);
+        }
+    }
+}
+
+pub fn rounded_panel(rect: Rect, radius: f32, fill: Color, border: Color) {
+    rounded_rect(rect, radius, border);
+    rounded_rect(
+        Rect::new(
+            rect.x + 1.0,
+            rect.y + 1.0,
+            (rect.w - 2.0).max(0.0),
+            (rect.h - 2.0).max(0.0),
+        ),
+        (radius - 1.0).max(0.0),
+        fill,
+    );
+}
+
+pub fn rounded_outline(rect: Rect, radius: f32, color: Color) {
+    let r = radius.clamp(0.0, rect.w.min(rect.h) * 0.5);
+    let steps = 8;
+    let corners = [
+        (
+            rect.x + rect.w - r,
+            rect.y + r,
+            -std::f32::consts::FRAC_PI_2,
+        ),
+        (rect.x + rect.w - r, rect.y + rect.h - r, 0.0),
+        (rect.x + r, rect.y + rect.h - r, std::f32::consts::FRAC_PI_2),
+        (rect.x + r, rect.y + r, std::f32::consts::PI),
+    ];
+    let mut first: Option<Vec2> = None;
+    let mut previous: Option<Vec2> = None;
+    for (cx, cy, start) in corners {
+        for i in 0..=steps {
+            let angle = start + i as f32 * std::f32::consts::FRAC_PI_2 / steps as f32;
+            let next = vec2(cx + r * angle.cos(), cy + r * angle.sin());
+            if let Some(prev) = previous {
+                draw_line(prev.x, prev.y, next.x, next.y, 1.0, color);
+            } else {
+                first = Some(next);
+            }
+            previous = Some(next);
+        }
+    }
+    if let (Some(a), Some(b)) = (previous, first) {
+        draw_line(a.x, a.y, b.x, b.y, 1.0, color);
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct TextInput {
     pub label: &'static str,
@@ -163,32 +356,116 @@ pub struct TextInput {
     /// Countdown of the "rejected value" highlight, in seconds.
     pub error: f32,
     caret: f32,
+    cursor: usize,
+    selected: bool,
 }
 
 impl TextInput {
     pub fn new(label: &'static str, hint: &'static str, value: impl Into<String>) -> Self {
-        TextInput { label, hint, text: value.into(), focused: false, error: 0.0, caret: 0.0 }
+        let text: String = value.into();
+        let cursor = text.chars().count();
+        TextInput {
+            label,
+            hint,
+            text,
+            focused: false,
+            error: 0.0,
+            caret: 0.0,
+            cursor,
+            selected: false,
+        }
     }
 
     /// Programmatic update. Ignored while the field is being edited, so typing is never clobbered.
     pub fn set(&mut self, value: impl Into<String>) {
         if !self.focused {
-            self.text = value.into();
+            self.replace(value);
         }
     }
 
+    fn byte_index(&self, at: usize) -> usize {
+        self.text
+            .char_indices()
+            .nth(at)
+            .map_or(self.text.len(), |(i, _)| i)
+    }
+
+    pub fn focus(&mut self) {
+        self.focused = true;
+        self.cursor = self.text.chars().count();
+        self.selected = false;
+        self.caret = 0.0;
+    }
+
+    pub fn select_all(&mut self) {
+        self.selected = true;
+    }
+
     pub fn push_char(&mut self, c: char) {
-        if !c.is_control() && self.text.chars().count() < MAX_LEN {
-            self.text.push(c);
+        if c.is_control() {
+            return;
+        }
+        if self.selected {
+            self.clear();
+        }
+        if self.text.chars().count() < MAX_LEN {
+            self.text.insert(self.byte_index(self.cursor), c);
+            self.cursor += 1;
+        }
+    }
+
+    pub fn paste(&mut self, text: &str) {
+        for ch in text.chars().filter(|c| !c.is_control()) {
+            self.push_char(ch);
         }
     }
 
     pub fn backspace(&mut self) {
-        self.text.pop();
+        if self.selected {
+            self.clear();
+            return;
+        }
+        if self.cursor > 0 {
+            self.text.remove(self.byte_index(self.cursor - 1));
+            self.cursor -= 1;
+        }
+    }
+
+    pub fn delete(&mut self) {
+        if self.selected {
+            self.clear();
+            return;
+        }
+        if self.cursor < self.text.chars().count() {
+            self.text.remove(self.byte_index(self.cursor));
+        }
+    }
+
+    pub fn move_cursor(&mut self, position: usize) {
+        self.cursor = position.min(self.text.chars().count());
+        self.selected = false;
+        self.caret = 0.0;
+    }
+
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    pub fn is_selected(&self) -> bool {
+        self.selected
     }
 
     pub fn clear(&mut self) {
         self.text.clear();
+        self.cursor = 0;
+        self.selected = false;
+    }
+
+    pub fn replace(&mut self, value: impl Into<String>) {
+        self.text = value.into();
+        self.cursor = self.text.chars().count();
+        self.selected = false;
+        self.error = 0.0;
     }
 
     pub fn mark_error(&mut self) {
@@ -203,67 +480,284 @@ impl TextInput {
     }
 
     pub fn draw(&mut self, rect: Rect, theme: &Theme, time: f64) {
-        draw_rectangle(
-            rect.x,
-            rect.y,
-            rect.w,
-            rect.h,
-            if self.focused { theme.field_bg_focus } else { theme.field_bg },
-        );
+        let (mx, my) = mouse_position();
         let border = if self.error > 0.0 {
             theme.field_error
         } else if self.focused {
             theme.field_border_focus
+        } else if inside(rect, vec2(mx, my)) {
+            theme.button_border
         } else {
             theme.field_border
         };
-        draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.0, border);
-        draw_text(self.label, rect.x + 8.0, rect.y + 21.0, 19.0, theme.text_dim);
+        if self.focused {
+            let mut glow = border;
+            glow.a = 0.18;
+            rounded_rect(
+                Rect::new(rect.x - 2.0, rect.y - 2.0, rect.w + 4.0, rect.h + 4.0),
+                9.0,
+                glow,
+            );
+        }
+        rounded_panel(
+            rect,
+            7.0,
+            if self.focused {
+                theme.field_bg_focus
+            } else {
+                theme.field_bg
+            },
+            border,
+        );
+        let label = field_label(self.label);
+        draw_text(label, rect.x + 8.0, rect.y + 21.0, 18.0, theme.text_dim);
         let value_x = rect.x + LABEL_W;
         let empty = self.text.is_empty();
-        let color = if empty { theme.text_hint } else { theme.text_bright };
-        let shown = if empty { self.hint } else { &self.text };
-        draw_text(shown, value_x, rect.y + 21.0, 20.0, color);
-        if self.focused && (time * 2.2) as i64 % 2 == 0 {
-            let w = measure_text(&self.text, None, 20, 1.0).width;
-            let x = (value_x + w + 2.0).min(rect.x + rect.w - 6.0);
-            draw_rectangle(x, rect.y + 6.0, 2.0, rect.h - 12.0, theme.caret);
+        let color = if empty {
+            theme.text_hint
+        } else {
+            theme.text_bright
+        };
+        let available = (rect.x + rect.w - value_x - 12.0).max(0.0);
+        let mut start = 0;
+        if self.focused {
+            while start < self.cursor
+                && measure_text(
+                    &self.text[self.byte_index(start)..self.byte_index(self.cursor)],
+                    None,
+                    20,
+                    1.0,
+                )
+                .width
+                    > available
+            {
+                start += 1;
+            }
+        }
+        let shown = if empty {
+            if language() == Language::Zh && self.label == "dir" {
+                "+/-1..64"
+            } else {
+                self.hint
+            }
+        } else {
+            &self.text[self.byte_index(start)..]
+        };
+        let mut visible = String::new();
+        for ch in shown.chars() {
+            let candidate = format!("{visible}{ch}");
+            if measure_text(&candidate, None, 20, 1.0).width > available {
+                break;
+            }
+            visible.push(ch);
+        }
+        if self.focused && self.selected {
+            draw_rectangle(
+                value_x,
+                rect.y + 4.0,
+                measure_text(&visible, None, 20, 1.0).width,
+                rect.h - 8.0,
+                theme.button_bg_active,
+            );
+        }
+        draw_text(&visible, value_x, rect.y + 21.0, 20.0, color);
+        if self.focused && !self.selected && (time * 2.2) as i64 % 2 == 0 {
+            let prefix = &self.text[self.byte_index(start)..self.byte_index(self.cursor)];
+            let w = measure_text(prefix, None, 20, 1.0).width;
+            draw_rectangle(
+                value_x + w + 1.0,
+                rect.y + 6.0,
+                2.0,
+                rect.h - 12.0,
+                theme.caret,
+            );
         }
     }
 }
 
-/// A clickable labelled button; returns true when it was clicked this frame.
-pub fn button(rect: Rect, label: &str, active: bool, theme: &Theme) -> bool {
+/// Hit-test a control during update; drawing and event handling are kept separate.
+pub fn clicked(rect: Rect) -> bool {
+    let (mx, my) = mouse_position();
+    inside(rect, vec2(mx, my)) && is_mouse_button_pressed(MouseButton::Left)
+}
+
+pub fn button(rect: Rect, label: &str, active: bool, theme: &Theme) {
     let (mx, my) = mouse_position();
     let hovered = inside(rect, vec2(mx, my));
     let bg = if active {
-        theme.button_bg_active
+        theme.accent_bg
     } else if hovered {
         theme.button_bg_hover
     } else {
         theme.button_bg
     };
-    draw_rectangle(rect.x, rect.y, rect.w, rect.h, bg);
-    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.0, theme.button_border);
-    let dim = measure_text(label, None, 19, 1.0);
+    let shadow = Color::new(0.0, 0.0, 0.0, if theme.is_light() { 0.09 } else { 0.20 });
+    rounded_rect(Rect::new(rect.x, rect.y + 2.0, rect.w, rect.h), 8.0, shadow);
+    rounded_panel(
+        rect,
+        8.0,
+        bg,
+        if active {
+            theme.accent_bg
+        } else {
+            theme.button_border
+        },
+    );
+    let natural = measure_text(label, None, 19, 1.0).width;
+    let size = if natural > rect.w - 12.0 {
+        (19.0 * (rect.w - 12.0) / natural).max(11.0)
+    } else {
+        19.0
+    };
+    let dim = measure_text(label, None, size as u16, 1.0);
     draw_text(
         label,
         rect.x + (rect.w - dim.width) * 0.5,
         rect.y + rect.h * 0.5 + dim.height * 0.35,
-        19.0,
-        theme.button_text,
+        size,
+        if active {
+            theme.accent_text
+        } else {
+            theme.button_text
+        },
     );
-    hovered && is_mouse_button_pressed(MouseButton::Left)
 }
 
-/// A round icon button (`?`); returns true when it was clicked this frame.
-pub fn icon_button(center: Vec2, radius: f32, glyph: &str, theme: &Theme) -> bool {
+/// The three rule choices share one field row. Keep hit regions separate from drawing.
+pub fn segmented_choice_rect(rect: Rect, index: usize) -> Rect {
+    debug_assert!(index < 3);
+    let slot = (rect.w - 60.0).max(0.0) / 3.0;
+    Rect::new(
+        rect.x + 56.0 + slot * index as f32 + 2.0,
+        rect.y + 3.0,
+        (slot - 4.0).max(0.0),
+        (rect.h - 6.0).max(0.0),
+    )
+}
+
+/// Draw the draft rule selection without modifying the underlying text field.
+pub fn rule_selector(
+    rect: Rect,
+    choices: [&str; 3],
+    selected: usize,
+    focused: bool,
+    theme: &Theme,
+) {
+    if focused {
+        let mut glow = theme.field_border_focus;
+        glow.a = 0.18;
+        rounded_rect(
+            Rect::new(rect.x - 2.0, rect.y - 2.0, rect.w + 4.0, rect.h + 4.0),
+            9.0,
+            glow,
+        );
+    }
+    rounded_panel(
+        rect,
+        7.0,
+        theme.field_bg,
+        if focused {
+            theme.field_border_focus
+        } else {
+            theme.field_border
+        },
+    );
+    draw_text(
+        field_label("rule"),
+        rect.x + 8.0,
+        rect.y + rect.h * 0.5 + 5.0,
+        16.0,
+        theme.text_dim,
+    );
+    let (mx, my) = mouse_position();
+    for (index, choice) in choices.iter().enumerate() {
+        let segment = segmented_choice_rect(rect, index);
+        let active = selected == index;
+        let hovered = inside(segment, vec2(mx, my));
+        if active {
+            rounded_panel(segment, 6.0, theme.accent_bg, theme.field_border_focus);
+        } else if hovered {
+            rounded_rect(segment, 6.0, theme.button_bg_hover);
+        }
+        let max_width = (segment.w - 6.0).max(0.0);
+        let mut size = 15u16;
+        while size > 10 && measure_app_text(choice, size).width > max_width {
+            size -= 1;
+        }
+        let dimensions = measure_app_text(choice, size);
+        draw_text(
+            choice,
+            segment.x + (segment.w - dimensions.width) * 0.5,
+            segment.y + segment.h * 0.5 + dimensions.height * 0.35,
+            size as f32,
+            if active {
+                theme.accent_text
+            } else {
+                theme.text_bright
+            },
+        );
+    }
+}
+
+/// A draggable playback track. The caller owns seeking and drag capture.
+pub fn scrubber(rect: Rect, fraction: f32, dragging: bool, theme: &Theme) {
+    let fraction = fraction.clamp(0.0, 1.0);
+    let center = vec2(rect.x + rect.w * fraction, rect.y + rect.h * 0.5);
+    let (mx, my) = mouse_position();
+    let hovered = inside(
+        Rect::new(rect.x - 9.0, rect.y - 7.0, rect.w + 18.0, rect.h + 14.0),
+        vec2(mx, my),
+    );
+    rounded_panel(rect, rect.h * 0.5, theme.field_bg, theme.field_border);
+    let filled = rect.w * fraction;
+    if filled > 0.0 {
+        rounded_rect(
+            Rect::new(rect.x, rect.y, filled, rect.h),
+            rect.h * 0.5,
+            theme.field_border_focus,
+        );
+    }
+    if dragging || hovered {
+        let mut halo = theme.field_border_focus;
+        halo.a = if dragging { 0.24 } else { 0.13 };
+        draw_circle(center.x, center.y, if dragging { 11.0 } else { 9.5 }, halo);
+    }
+    let radius = if dragging {
+        7.5
+    } else if hovered {
+        6.5
+    } else {
+        5.5
+    };
+    draw_circle(
+        center.x,
+        center.y + 1.0,
+        radius + 1.0,
+        Color::new(0.0, 0.0, 0.0, 0.18),
+    );
+    draw_circle(center.x, center.y, radius + 1.0, theme.field_border_focus);
+    draw_circle(center.x, center.y, radius, theme.accent_text);
+}
+
+pub fn icon_button(center: Vec2, radius: f32, glyph: &str, theme: &Theme) {
     let (mx, my) = mouse_position();
     let hovered = ((mx - center.x).powi(2) + (my - center.y).powi(2)).sqrt() <= radius;
-    let mut fill = theme.button_bg_hover;
-    fill.a = if hovered { 0.95 } else { 0.55 };
-    draw_circle(center.x, center.y, radius, fill);
-    draw_circle_lines(center.x, center.y, radius, 1.5, theme.button_border);
+    let rect = Rect::new(
+        center.x - radius,
+        center.y - radius,
+        radius * 2.0,
+        radius * 2.0,
+    );
+    rounded_panel(
+        rect,
+        9.0,
+        if hovered {
+            theme.button_bg_hover
+        } else {
+            theme.button_bg
+        },
+        theme.button_border,
+    );
     let dim = measure_text(glyph, None, 24, 1.0);
     draw_text(
         glyph,
@@ -272,7 +766,6 @@ pub fn icon_button(center: Vec2, radius: f32, glyph: &str, theme: &Theme) -> boo
         24.0,
         theme.button_text,
     );
-    hovered && is_mouse_button_pressed(MouseButton::Left)
 }
 
 #[cfg(test)]
@@ -293,7 +786,10 @@ mod tests {
     }
 
     fn contrast(a: Color, b: Color) -> f32 {
-        let (hi, lo) = (luminance(a).max(luminance(b)), luminance(a).min(luminance(b)));
+        let (hi, lo) = (
+            luminance(a).max(luminance(b)),
+            luminance(a).min(luminance(b)),
+        );
         (hi + 0.05) / (lo + 0.05)
     }
 
@@ -345,6 +841,42 @@ mod tests {
     }
 
     #[test]
+    fn cursor_selection_and_paste_edit_in_place() {
+        let mut field = TextInput::new("steps", "2^30", "1234");
+        field.focus();
+        field.move_cursor(2);
+        field.push_char('x');
+        assert_eq!(field.text, "12x34");
+        field.backspace();
+        assert_eq!(field.text, "1234");
+        field.delete();
+        assert_eq!(field.text, "124");
+        field.select_all();
+        field.paste("2^30\n");
+        assert_eq!(field.text, "2^30");
+        field.move_cursor(0);
+        field.push_char('λ');
+        field.move_cursor(1);
+        field.delete();
+        assert_eq!(field.text, "λ^30");
+    }
+
+    #[test]
+    fn segmented_choices_fit_narrow_and_wide_fields_without_overlap() {
+        for width in [256.0, 312.0] {
+            let outer = Rect::new(16.0, 170.0, width, FIELD_H);
+            let choices = [0, 1, 2].map(|i| segmented_choice_rect(outer, i));
+            for choice in choices {
+                assert!(choice.x >= outer.x && choice.x + choice.w <= outer.x + outer.w);
+                assert!(choice.y >= outer.y && choice.y + choice.h <= outer.y + outer.h);
+                assert!(choice.w > 0.0 && choice.h > 0.0);
+            }
+            assert!(choices[0].x + choices[0].w < choices[1].x);
+            assert!(choices[1].x + choices[1].w < choices[2].x);
+        }
+    }
+
+    #[test]
     fn hit_testing_is_inclusive() {
         let rect = Rect::new(10.0, 20.0, 100.0, 30.0);
         assert!(inside(rect, vec2(10.0, 20.0)));
@@ -357,11 +889,26 @@ mod tests {
     #[test]
     fn themes_keep_enough_contrast() {
         for theme in [Theme::dark(), Theme::light()] {
-            assert!(contrast(theme.text_bright, theme.panel_bg) >= 4.0, "text vs pane");
-            assert!(contrast(theme.text_dim, theme.panel_bg) >= 3.0, "labels vs pane");
-            assert!(contrast(theme.text_bright, theme.field_bg) >= 4.0, "value vs field");
-            assert!(contrast(theme.button_text, theme.panel_bg) >= 3.0, "button vs pane");
-            assert!(contrast(theme.field_error, theme.field_bg) >= 2.0, "error vs field");
+            assert!(
+                contrast(theme.text_bright, theme.panel_bg) >= 4.0,
+                "text vs pane"
+            );
+            assert!(
+                contrast(theme.text_dim, theme.panel_bg) >= 3.0,
+                "labels vs pane"
+            );
+            assert!(
+                contrast(theme.text_bright, theme.field_bg) >= 4.0,
+                "value vs field"
+            );
+            assert!(
+                contrast(theme.button_text, theme.panel_bg) >= 3.0,
+                "button vs pane"
+            );
+            assert!(
+                contrast(theme.field_error, theme.field_bg) >= 2.0,
+                "error vs field"
+            );
         }
     }
 
