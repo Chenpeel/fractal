@@ -394,7 +394,7 @@ pub fn render_curve_window(
     raster.downsample(ss)
 }
 
-/// One-shot render of a curve (all segments, or the first `visible`), framed by its bbox.
+/// Same render, framed by the curve's bounding box.
 pub fn render_curve(curve: &Curve, opts: &RenderOpts, visible: Option<usize>) -> (u32, u32, Vec<u8>) {
     let win = Window::from_bbox(
         &curve.bbox,

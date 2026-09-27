@@ -262,7 +262,6 @@ mod tests {
         assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
     }
 
-    /// Deep mode must animate `2^50` steps as levels, not as an impossible trace.
     #[test]
     fn deep_mode_animates_a_few_frames() {
         let params = Params::new(2, 4, 1 << 50);

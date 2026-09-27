@@ -1,9 +1,6 @@
 //! Colour helpers and the two canvas themes (dark / light).
 
 /// Background + matching stroke ramp for the rendered picture.
-///
-/// The GUI chrome (control pane, help page) always stays dark; this only switches the *canvas*
-/// that the fractal is drawn on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Canvas {
     Dark,

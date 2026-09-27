@@ -167,13 +167,11 @@ impl Params {
         360.0 / dir_or_one(self.dir) as f64
     }
 
-    /// Heading (radians) of the `n`-th step.
     pub fn heading_at(&self, n: u64) -> f64 {
         std::f64::consts::TAU / dir_or_one(self.dir) as f64 * digit_weight(n, self.base, self.rule) as f64
     }
 }
 
-/// Sum of the digits of `n` written in `base`.
 pub fn digit_sum(mut n: u64, base: u32) -> u32 {
     let b = base.max(2) as u64;
     let mut sum = 0u32;
@@ -195,12 +193,10 @@ pub fn digit_weight(mut n: u64, base: u32, rule: DigitRule) -> i64 {
     sum
 }
 
-/// Heading (radians) of the `n`-th step under an explicit rule.
 pub fn heading_rule(n: u64, base: u32, dir: i32, rule: DigitRule) -> f64 {
     std::f64::consts::TAU / dir_or_one(dir) as f64 * digit_weight(n, base, rule) as f64
 }
 
-/// Heading (radians) of the `n`-th step under the default linear rule.
 pub fn heading(n: u64, base: u32, dir: i32) -> f64 {
     heading_rule(n, base, dir, DigitRule::Linear)
 }
@@ -223,7 +219,6 @@ pub fn block_prefix_rule(base: u32, dir: i32, rule: DigitRule, r: u64) -> [f64; 
     [x, y]
 }
 
-/// `c_r` under the default linear rule.
 pub fn block_prefix(base: u32, dir: i32, r: u64) -> [f64; 2] {
     block_prefix_rule(base, dir, DigitRule::Linear, r)
 }
@@ -233,7 +228,6 @@ pub fn scale_factor_rule(base: u32, dir: i32, rule: DigitRule) -> [f64; 2] {
     block_prefix_rule(base, dir, rule, base as u64)
 }
 
-/// `S` under the default linear rule.
 pub fn scale_factor(base: u32, dir: i32) -> [f64; 2] {
     scale_factor_rule(base, dir, DigitRule::Linear)
 }
@@ -245,7 +239,6 @@ pub fn gain_rule(base: u32, dir: i32, rule: DigitRule) -> f64 {
     (s[0] * s[0] + s[1] * s[1]).sqrt()
 }
 
-/// `|S|` under the default linear rule.
 pub fn gain(base: u32, dir: i32) -> f64 {
     gain_rule(base, dir, DigitRule::Linear)
 }
@@ -277,7 +270,6 @@ pub fn cmul(z: [f64; 2], w: [f64; 2]) -> [f64; 2] {
     [z[0] * w[0] - z[1] * w[1], z[0] * w[1] + z[1] * w[0]]
 }
 
-/// `z^k` for a complex `z` and a small integer exponent.
 pub fn cpow(z: [f64; 2], k: i64) -> [f64; 2] {
     let n = k.unsigned_abs().min(128);
     let mut acc = [1.0f64, 0.0f64];
@@ -400,7 +392,6 @@ mod tests {
 
     #[test]
     fn headings_follow_the_rule() {
-        // 2*PI / dir times the digit sum.
         assert!((heading(0, 2, 4) - 0.0).abs() < 1e-12);
         assert!((heading(2, 2, 4) - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
         assert!((heading(3, 3, 4) - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
@@ -460,7 +451,6 @@ mod tests {
         }
     }
 
-    /// `generate` must cap the materialised length and say so.
     #[test]
     fn generate_caps_at_enum_limit() {
         let c = generate(&Params::new(2, 4, MAX_STEPS));
@@ -468,8 +458,6 @@ mod tests {
         assert_eq!(c.segments(), MAX_ENUM_STEPS as usize);
     }
 
-    /// The identity the deep renderer is built on:
-    /// `z(m*b^L + j) = S^L * z(m) + zeta^(s_b(m)) * z(j)`.
     #[test]
     fn block_identity_holds() {
         for (b, d) in [(2u32, 4i32), (2, -4), (3, 3), (3, 5), (4, 7), (5, 8)] {
@@ -506,7 +494,6 @@ mod tests {
         }
     }
 
-    /// The self-similarity `z(b*N) = S * z(N)` must hold for every parameter pair.
     #[test]
     fn self_similarity_holds() {
         let steps = 1u64 << 12;
@@ -537,7 +524,6 @@ mod tests {
         }
     }
 
-    /// `dir | base` -> `S = 0`: closed polygon, tiny vertex set.
     #[test]
     fn dir_dividing_base_is_a_closed_polygon() {
         let steps = 1u64 << 10;
@@ -553,7 +539,6 @@ mod tests {
         }
     }
 
-    /// `base = +-1 (mod dir)` -> `|S| = 1`: bounded, periodic, not a fractal.
     #[test]
     fn base_plus_minus_one_mod_dir_is_bounded() {
         for (b, d) in [
@@ -588,7 +573,6 @@ mod tests {
         }
     }
 
-    /// Middle residues -> `|S| > 1`: the walk expands geometrically.
     #[test]
     fn middle_residue_is_expanding() {
         for (b, d) in [
@@ -616,8 +600,6 @@ mod tests {
         }
     }
 
-    /// `dir > base` (and a middle residue) gives the classic space-filling dragons: almost
-    /// every step lands on a new lattice point.
     #[test]
     fn dir_above_base_is_dense() {
         let steps = 1u64 << 12;
@@ -641,8 +623,6 @@ mod tests {
         }
     }
 
-    /// `dir <= base` (and a middle residue) still expands but collapses onto a sparse
-    /// skeleton: most steps revisit lattice points that are already on the path.
     #[test]
     fn small_dir_on_a_big_base_is_sparse() {
         let steps = 1u64 << 12;
@@ -655,7 +635,6 @@ mod tests {
         }
     }
 
-    /// `dir = +-1` turns a full circle per digit unit: a straight ray.
     #[test]
     fn dir_one_is_a_straight_ray() {
         for d in [1, -1] {
@@ -669,8 +648,6 @@ mod tests {
         }
     }
 
-    /// Every rule must keep the block identity `z(m*b^L + j) = S^L z(m) + zeta^(f(m)) z(j)`,
-    /// because that is all the deep renderer needs.
     #[test]
     fn block_identity_holds_for_every_rule() {
         for rule in [DigitRule::Linear, DigitRule::Alternate, DigitRule::Fold] {
@@ -706,7 +683,6 @@ mod tests {
         }
     }
 
-    /// `(base, dir, rule) = (4, 6, fold)` is the Koch arc (mirrored), with `|S| = 3` exactly.
     #[test]
     fn fold_rule_produces_the_koch_arc() {
         let p = Params::new(4, 6, 1 << 12).with_rule(DigitRule::Fold);
@@ -743,7 +719,6 @@ mod tests {
         assert!((span[0] - 729.0).abs() < 1e-6 && span[1].abs() < 1e-6, "z(4^6) = {span:?}");
     }
 
-    /// The other rules must stay non-degenerate where they are advertised.
     #[test]
     fn non_linear_rules_have_expected_weights() {
         assert_eq!(DigitRule::Linear.weight(3, 4), 3);

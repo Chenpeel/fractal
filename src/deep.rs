@@ -375,7 +375,6 @@ mod tests {
         }
     }
 
-    /// Framing must contain the exact picture (within the padding).
     #[test]
     fn frame_bbox_tracks_the_real_extent() {
         for (b, d) in [(2u32, 4i32), (3, 5), (4, 7)] {
@@ -424,7 +423,6 @@ mod tests {
         }
     }
 
-    /// Deep framing: 2^50 steps must be framed like the scaled self-similar picture.
     #[test]
     fn frame_bbox_handles_deep_levels() {
         let steps = 1u64 << 50;
@@ -458,8 +456,6 @@ mod tests {
         assert!(framed.width() < hull.width() * 1.25, "framing too loose");
     }
 
-    /// The adaptive traversal must paint the same picture as the point-list renderer, for every
-    /// digit rule (the block identity holds for all of them).
     #[test]
     fn deep_matches_enumeration() {
         let (w, h) = (240u32, 200u32);
@@ -492,8 +488,6 @@ mod tests {
         }
     }
 
-    /// Same window, both renderers, a big step count: the deep traversal must paint the same
-    /// picture as the point-list renderer (this is the "is the middle missing?" check).
     #[test]
     fn deep_matches_enumeration_at_a_big_level() {
         use crate::fractal::DigitRule;
@@ -559,8 +553,6 @@ mod tests {
         count
     }
 
-    /// A deep render of a connected curve must come out as one continuous stroke, not as a
-    /// broken bead chain (sub-pixel blocks are stamped, so they have to be connected).
     #[test]
     fn deep_stroke_is_continuous() {
         use crate::fractal::DigitRule;
@@ -590,7 +582,6 @@ mod tests {
         }
     }
 
-    /// Deep zoom: bounded work at every magnification, and real ink where the curve passes.
     #[test]
     fn deep_zoom_is_bounded_and_not_blank() {
         let (w, h) = (200u32, 200u32);
@@ -612,7 +603,6 @@ mod tests {
         assert!(!stats.truncated && stats.nodes < 400_000, "nodes={}", stats.nodes);
     }
 
-    /// Rendering `2^50` steps must cost about the same as `2^20`.
     #[test]
     fn cost_is_independent_of_step_count() {
         let params = Params::new(2, 4, 1 << 50);
@@ -635,7 +625,6 @@ mod tests {
         assert!(huge.nodes > 100, "suspiciously few nodes: {}", huge.nodes);
     }
 
-    /// The frontier reported by a deep render must be near the enumeration's tip.
     #[test]
     fn frontier_matches_the_enumeration_tip() {
         let steps = 4096u64;
@@ -654,7 +643,6 @@ mod tests {
         assert!(err < 8.0, "frontier {tip:?} vs tip {want:?}");
     }
 
-    /// Node budget protection: absurd requests must stop instead of hanging.
     #[test]
     fn budget_truncates_instead_of_hanging() {
         let params = Params::new(2, 4, 1 << 50);
