@@ -1,8 +1,57 @@
-# fun_fractal_base_direction
+# fractal
 
-用「进制 $b$ + 方向数 $\text{dir}$」驱动海龟画分形的 Rust 工具: 可实时调参/缩放的交互窗口, 逐步描线与 Manim 式动画导出, 以及步数到 $2^{50}$ 的自适应深渲染.
+进制 $b$ ，方向数 $\text{dir}$ 
 
-## 1. 核心规则
+绘制分形，实时调参/缩放的交互窗口.
+
+- 龙形曲线 (twindragon)
+
+    `--base 2 --dir 4 --rule linear --steps 32768 --story draw --fps 12 --secs 4`
+
+![龙形曲线 (twindragon)](assets/dragon_2_4.gif)
+
+- 科赫弧 (默认参数) 
+![](assets/koch_4_6_fold.gif) 
+`--base 4 --dir 6 --rule fold --steps 65536 --story draw --fps 15 --secs 5`
+
+
+- 密集填充
+![](assets/fill_3_7.gif)
+`--base 3 --dir 7 --rule linear --steps 177147 --story draw --fps 15 --secs 5`
+
+- 深渲染 (步数 $2^{50}$) :
+    ![](assets/deep_2_4_2p50.gif)
+     `--base 2 --dir 4 --rule linear --steps 2^50 --story grow --fps 15 --secs 5`
+
+- 亮色主题 (`--bg light`)
+
+    ![](assets/dragon_2_4_light.gif)
+    `--base 2 --dir 4 --rule linear --steps 32768 --bg light --story draw --fps 12 --secs 4`
+
+- 高进制密集填充
+![](assets/fill_5_8.gif)
+`--base 5 --dir 8 --rule linear --steps 390625 --story draw --fps 15 --secs 5 --width 720 --height 540`
+
+- 交替规则 ($|S| = 0.618 < 1$, 收缩型)
+![](assets/alt_3_5.gif)
+`--base 3 --dir 5 --rule alternate --steps 59049 --story draw --fps 15 --secs 5 --width 720 --height 540 --ss 1`
+
+- 稀疏骨架 ($\text{dir} \le b$)
+![](assets/skel_6_4.gif)
+`--base 6 --dir 4 --rule linear --steps 200000 --story grow --fps 15 --secs 5 --width 720 --height 540`
+
+- 镜像 ($\text{dir}$ 取负号, 与上面的 $(3,7)$ 成对)
+![](assets/mirror_3_-7.gif)
+`--base 3 --dir -7 --rule linear --steps 177147 --story grow --fps 15 --secs 5 --width 720 --height 540`
+
+- 巡游缩放 (`--story tour`: 画完推进放大看自相似层级)
+![](assets/tour_3_7_light.gif)
+`--base 3 --dir 7 --rule linear --steps 177147 --story tour --bg light --fps 15 --secs 6 --width 720 --height 540`
+
+上面所有示例图的输出都是 720x540 (默认是 1600x1200).
+
+
+## 数学原理
 
 $$\theta_n = \frac{2\pi}{\text{dir}}\sum_i g(r_i), \qquad z_{n+1} = z_n + e^{i\theta_n}$$
 
@@ -14,7 +63,7 @@ $$\theta_n = \frac{2\pi}{\text{dir}}\sum_i g(r_i), \qquad z_{n+1} = z_n + e^{i\t
 | `alternate` | $(-1)^r r$ | 符号随数字值交替 |
 | `fold` | $(-1)^r\min(r,\,b-1-r)$ | 先折到半程再交替符号; $(b,\text{dir})=(4,6)$ **正好给出科赫弧** |
 
-三个表都满足 $g$ 的逐位可加性 $f(bm+r)=f(m)+g(r)$, 所以下面所有结论 (块恒等式, 自相似比, 深渲染, 分级揭示, 缩放) 对三种规则同时成立, 换表不需要改渲染器.
+三个表都满足 $g$ 的逐位可加性 $f(bm+r)=f(m)+g(r)$, 所以下面所有结论 (块恒等式, 自相似比, 深渲染, 分级揭示, 缩放) 对三种规则同时成立.
 
 两个边界情况: `fold` 在 $b=2$ 时权重全为 0 (退化成直线, `DigitRule::is_degenerate_for` 会标出来); `alternate` 会出现 $\lvert S\rvert<1$ 的收缩规则 (例如 $(3,5)$, $\lvert S\rvert=0.618$), 同样有界但不是周期图形.
 
@@ -26,7 +75,7 @@ $$\theta_n = \frac{2\pi}{\text{dir}}\sum_i g(r_i), \qquad z_{n+1} = z_n + e^{i\t
 
 $$z(m\,b^L + j) = S^L z(m) + \zeta^{f(m)} z(j), \qquad 0 \le j < b^L, \qquad S = \sum_{r=0}^{b-1}\zeta^{\,g(r)} = \frac{1-\zeta^{\,g(b)\,b}}{1-\zeta^{\,g(1)}}\ \ (\text{linear})$$
 
-它就是整个工具的基础: 自相似, 分级揭示, 以及深渲染 (第 4 节) 都由此而来. 判据是 $|S|$ (对三种规则都能直接算). 对 $\text{linear}$ 才有简化式 $|S| = \left|\sin(\pi b/\text{dir})\right| / \left|\sin(\pi/\text{dir})\right|$, 于是记 $r = b \bmod |\text{dir}|$:
+它就是整个工具的基础: 自相似, 分级揭示, 深渲染都由此而来. 判据是 $|S|$ (对三种规则都能直接算). 对 $\text{linear}$ 才有简化式 $|S| = \left|\sin(\pi b/\text{dir})\right| / \left|\sin(\pi/\text{dir})\right|$, 于是记 $r = b \bmod |\text{dir}|$:
 
 | 条件 | 结果 |
 |---|---|
@@ -34,20 +83,20 @@ $$z(m\,b^L + j) = S^L z(m) + \zeta^{f(m)} z(j), \qquad 0 \le j < b^L, \qquad S =
 | $r = \pm 1$ (linear) | $\lvert S\rvert = 1$: $S$ 是纯旋转, 有界周期, 不是分形 |
 | 其他 | $\lvert S\rvert > 1$: 扩张自相似分形 |
 
-科赫弧的例子: `--base 4 --dir 6 --rule fold` 的自相似比正好 $|S| = 1+\zeta^{-1}+\zeta^{+1}+1 = 3$, 与科赫曲线"每级 4 份, 尺度比 3"一致; `cargo test` 里的 `fold_rule_produces_the_koch_arc` 逐段比对了前 16 段方向并验证 $z(4^k)=3^k$, 渲染后实测盒计数维数 $D=1.31$ (科赫理论值 $\log 4/\log 3 = 1.262$). 注意 `linear` 族里没有科赫: 那要求同时满足 (4 份, 比值 3, 60 度), 而 $|S|=\sin(\pi b/\text{dir})/\sin(\pi/\text{dir})$ 与转角由同一个 $\text{dir}$ 钉死, 无整数解.
+科赫弧的例子: `--base 4 --dir 6 --rule fold` 的自相似比正好 $|S| = 1+\zeta^{-1}+\zeta^{+1}+1 = 3$, 与科赫曲线"每级 4 份, 尺度比 3"一致; 渲染后实测盒计数维数 $D=1.31$ (科赫理论值 $\log 4/\log 3 = 1.262$). 注意 `linear` 族里没有科赫: 那要求同时满足 (4 份, 比值 3, 60 度), 而 $|S|=\sin(\pi b/\text{dir})/\sin(\pi/\text{dir})$ 与转角由同一个 $\text{dir}$ 钉死, 无整数解.
 
-经验规律 (实测, 见 `fractal.rs` 的 `dir_above_base_is_dense` / `small_dir_on_a_big_base_is_sparse`):
+经验规律:
 
-- $\text{dir} > b$ 且 $r \notin \{0,\pm1\}$: 面积填充型密集分形, 最好看. 例如 $(2,4)$ $(2,5)$ $(2,8)$ $(2,12)$ $(3,7)$ $(4,9)$ $(5,8)$ $(6,11)$ $(9,11)$.
+- $\text{dir} > b$ 且 $r \notin \{0,\pm1\}$: 面积填充型密集分形. 例如 $(2,4)$ $(2,5)$ $(2,8)$ $(2,12)$ $(3,7)$ $(4,9)$ $(5,8)$ $(6,11)$ $(9,11)$.
 - $\text{dir} \le b$: 仍会扩张但坍缩成稀疏骨架 (如 $(6,4)$ $(10,4)$ $(10,7)$), 适合看结构不适合看细节.
 - $\text{dir} = 1$ (或 $-1$): 每步转满一圈, 退化成直线射线.
 
 $(b,\text{dir}) = (2,4)$ 时 $S = 1+i$, 即 twindragon 数系 (复基 $1+i$, 数字 $\{0,1\}$) 的自相似比例, 属龙形曲线族.
 
-## 2. 运行
+## 运行
 
 ```bash
-cargo run --release                                   # 打开交互窗口 (默认 b=2 dir=4 n=65536)
+cargo run --release                                   # 打开交互窗口GUI (默认 b=4 dir=6 rule=fold n=65536)
 cargo run --release -- render --base 3 --dir 6 --steps 177147 --out out/hex60
 cargo run --release -- render --base 2 --dir 4 --steps 1125899906842624 --zoom 1e4 --out out/deep
 cargo run --release -- anim   --base 2 --dir 5 --steps 200000 --story grow --secs 6 --out out/pentagon
@@ -58,116 +107,28 @@ cargo test                                            # 65 个测试
 
 `render` 输出 PNG (小步数另有 SVG); `anim` 默认把 RGB 帧直接管道给 `ffmpeg` 生成 H.264 MP4 (无中间帧落盘), 没有 `ffmpeg` 时用 `--gif` (内置零依赖 GIF89a 编码器) 或 `--frames-dir` 输出 PNG 序列.
 
-### GUI
+### 全部参数
 
-参数栏和画面是**分开的两块**: 左边是控制栏 (可 `Tab` 收起, 收起后画布占满窗口, 参数绝不遮挡画面), 右边是画布. 无参数启动时默认就是**科赫弧** (base 4, dir 6, rule fold).
+`适用` 一列标明参数对哪个子命令生效 (`全部` = gui / render / anim).
 
-- **输入框**: `base` / `dir` / `rule` / `steps` / `hue` 都是可编辑输入框 —— 点一下进入编辑, `Enter` 应用 (立刻重播), `Tab` 跳下一个, `Esc` 取消, `Delete` 清空. 非法输入标红并保留原值; `steps` 支持 `2^30`, `1.5e6`, `2_000_000`.
-- **右上角 `?` 图标**: 打开/关闭按键与参数说明页 (`H` 同效, `Esc` 关闭).
-- **`B` 或 `theme:` 按钮**: 切换主题 dark / light —— **画布 + 参数栏 + 帮助页一起切** (字段、按钮、文字、乌龟标记都跟着深/浅色走, 两套配色都做过对比度检查); 命令行的 `--bg` 让导出保持一致.
-- **鼠标滚轮**: 以**光标所在位置**为中心缩放 —— 光标下的点在屏幕上保持不动; 面板区域内滚轮不缩放.
-- **左键拖动**: 平移画面.
-
-键盘快捷键 (在输入框里打字时不会触发):
-
-| 键 | 作用 |
-|---|---|
-| `[` `]` | 进制 $b$ -1 / +1; 默认重播, 旧图淡出为残影 |
-| `,` `.` | 方向数 $\text{dir}$ ∓1 (跳过 0) |
-| `-` `=` | 步数 /2 / x2 (2 → $2^{50}$); 越过 4194304 自动切深渲染 |
-| `T` | 循环逐位转角表 `linear / alternate / fold` |
-| `Tab` | 收起 / 展开参数栏 |
-| `B` | 主题 dark / light (画布与整个界面一起切) |
-| `Shift` + 上面几组 | 保持当前进度热替换, 不重播 |
-| `X` `Z` | 以视口中心放大 / 缩小 (滚轮则是以光标为中心) |
-| `F` `G` | 视图复位 / 切换「整幅 ↔ 跟随海龟」 |
-| `↑` `↓` `空格` `R` | 速度 x2 / /2, 暂停, 从头重播 |
-| `C` `H` `Esc` | 配色相位, 帮助页, 关闭帮助页或退出 |
-| `P` `S` | 导出当前进度 PNG / 整幅 PNG (到 `out/`, 文件名带主题) |
-
-### 关键参数
-
-| 参数 | 含义 | 默认 |
-|---|---|---|
-| `--base B` | 进制 2..64 | 2 |
-| `--dir D` | 圆周等分数 $\lvert D\rvert$ 1..64, 负号=镜像 | 4 |
-| `--steps N` | 步数 1..$2^{50}$ | 65536 |
-| `--zoom Z` `--center X,Y` | `render` 的放大倍数与视口中心 | 1, 图形中心 |
-| `--width` `--height` `--ss` | 画布尺寸与超采样 1..4 | 1600x1200, ss=2 |
-| `--hue` `--gain` | 色相偏移 0..1, 描边浓度 | 0, 1 |
-| `--out PATH` | 输出路径前缀 (自动去扩展名) | `out/curve_b{B}_d{D}_n{N}` |
-| `--story` `--fps` `--secs` | `draw` / `grow` / `tour`, 帧率, 时长 | draw, 30, 8 |
-| `--gif` `--frames-dir` | GIF 输出 / PNG 帧序列输出 | 关 |
-| `--no-svg` `--quiet` `--frames N` `--shot P` | 不写 SVG / 静默 / gui 渲染 N 帧后退出 / 退出前把整个窗口截图为 P | 关 |
-
-## 3. 步数上限为什么能到 $2^{50}$
-
-枚举 $2^{50}$ 步在物理上不可能 ($10^{15}$ 个顶点 = 18 PB 内存, 数十年 CPU). 所以分两种模式:
-
-| 模式 | 触发 | 能力 | 代价 |
+| 参数 | 含义 | 适用 | 默认 |
 |---|---|---|---|
-| `enum` | `steps <= 4194304` | 完整点列: 逐段描线动画, PNG + SVG, 精确包围盒 | 内存 $\approx 16\,N$ 字节 |
-| `deep` | `steps > 4194304` | 用块恒等式只遍历与视口相交的块, 分级揭示, 任意缩放 | 与步数**无关**, 只与视口像素数和放大倍数有关 |
+| `--base B` | 进制 2..64 | 全部 | 2 |
+| `--dir D` | 圆周等分数 $\lvert D\rvert$ 1..64, 负号=镜像 | 全部 | 4 |
+| `--rule R` | 逐位转角表 `linear` / `alternate` / `fold` | 全部 | linear |
+| `--steps N` | 步数 1..$2^{50}$, 支持 `2^30` / `1.5e6` / `2_000_000` | 全部 | 65536 |
+| `--bg T` | 主题 `dark` / `light` | 全部 | dark |
+| `--lang L` | 界面语言 `en` / `zh` | gui | en |
+| `--width W` `--height H` | 输出尺寸 (render / anim) 或窗口尺寸 (gui) | 全部 | render/anim 1600x1200, gui 1500x900 |
+| `--ss S` | 超采样 1..4 | render/anim | 2 |
+| `--hue H` `--gain G` | 色相偏移 0..1, 描边浓度 (0,10] | 全部 | 0, 1 |
+| `--zoom Z` `--center X,Y` | 放大倍数与视口中心 (世界坐标) | render | 1, 图形中心 |
+| `--out PATH` | 输出路径前缀 (自动去扩展名) | 全部 | `out/curve_b{B}_d{D}_n{N}` |
+| `--story S` `--fps F` `--secs T` | 故事 `draw` / `grow` / `tour`, 帧率, 时长 | anim | draw, 30, 8 |
+| `--gif` | 输出 GIF 而不是 MP4 | anim | 关 |
+| `--frames-dir D` | 输出 PNG 帧序列到目录 D | anim | 关 |
+| `--no-svg` | 不写 SVG | render | 关 |
+| `--quiet` | 关闭进度输出 | 全部 | 关 |
+| `--frames N` | 渲染 N 帧后自动退出 (冒烟测试) | gui | 关 |
+| `--shot P` | 退出前把整个窗口截图为 P | gui | 关 |
 
-深渲染的做法: 每个块是一个「旋转 + 平移后的更短曲线」, 半径按 $\lvert S\rvert^{\text{level}}$ 增长; 从顶层往下走, 视口外的块直接剪掉. 小于一个像素的块压成**一个代表点加一条连接到上一个代表点的线段** —— 遍历是按索引顺序的 DFS, 相邻代表点就是路径上相邻的块, 所以这是同一条曲线在粗分辨率下的折线, 而不是断开的珠链 (被视口剪掉时会断开链, 免得画出一条跨越空洞的假直线). 于是 $2^{50}$ 步和 $2^{20}$ 步的渲染耗时几乎相同 (测试 `cost_is_independent_of_step_count` 断言两者节点数相差不到 2 倍), 而缩放越深只会看到越少的块.
-
-已知边界 (都实测过, 不是猜测):
-
-- **放大倍率的实际上限约 $10^{7}$**: 坐标按 $\lvert S\rvert^{L}$ 增长, $\lvert S\rvert^{50}$ 时坐标已在 $10^{7}\sim10^{8}$ 量级, 再放大单位细节会被 `f64` 的舍入吃掉. 超过后画面会变成平滑线条或空白.
-- 深渲染每帧有节点预算 (GUI 300 万, CLI 1200 万). 触顶时 CLI 打印 `TRUNCATED`, GUI 在 HUD 显示 `WARNING node budget hit: picture incomplete` — 不会静默丢内容.
-- 深模式下 `anim` 的分级揭示每帧上升一个块层级, 因此帧数受层级数限制 (2^50 时 50 级); 想逐点描线请看 `enum` 段位.
-
-## 4. 为什么有些地方是黑的
-
-这是集合本身的性质, 不是渲染漏画: 曲线是**一维**集合, $\lvert S\rvert>1$ 时虽然维数接近 2, 但任何窗口里的墨迹都只是它穿过的那部分. 实测 (见第 5 节):
-
-- 深渲染确实画在了曲线经过的所有位置: 测试 `ink_appears_where_deep_blocks_are` 取 $z(m\cdot 2^{j}) = S^{j}z(m)$ (指标最大到 $5.6\times10^{14}$) 作为窗口中心, 单位尺度窗口内墨迹都 $>500$ 像素.
-- 放大到 $10^6$ 倍时窗口只有约 54 个世界单位宽 (含约 2900 单位曲线长度), 这些墨迹会集中在窗口的一侧: 实测四象限覆盖为 `[[0,1],[0,1]]`, 墨迹 10.9%, 另一侧真的没有曲线经过.
-- 深模式刚开始揭示 (level 0..5) 时只画了 $2^{k}$ 步, 画面接近全黑是正常的. 实测 $2^{50}$ 的分级揭示 GIF: 前 6 帧墨迹各只有 25 像素, 末帧约 29000 像素 — 这不是丢内容, 是还没揭示到. HUD 里按 `R` 可重播这个过程.
-- 想避免「放大到空白处」: 用**滚轮**缩放 (以光标为中心), 而不是键盘 `X`/`Z` (以视口中心为中心, 而龙形集合的包围盒中心常常不在曲线上).
-- **细曲线** (例如科赫弧, $D\approx1.3$) 比龙形稀疏得多: 全幅墨迹只有 1.6% (龙形 23%), 任意小窗口绝大多数是空的. 深放大时要先把窗口对准曲线上的点, 例如 $z(4^{12}) = 3^{12} = 531441$ 在 x 轴上, `--center 531441,0 --zoom 3e4` 就能看到那一级的结构.
-
-## 5. 已验证
-
-- `cargo clippy --all-targets`: 0 警告; `cargo test`: 53 个库测试 + 9 个 GUI/控件测试 + 3 个 CLI 端到端测试全过.
-  - 核心数学: 块恒等式 (3 种规则 × 7 组参数, 多组 $(m,L,j)$), 科赫弧前 16 段方向与 $z(4^k)=3^k$, 自相似 $z(bN)=Sz(N)$ (15 组参数), $r=0$ 闭合且顶点集有界, $r=\pm1$ 有界不增长, 中间余数按 $\lvert S\rvert^{2}$ 增长, 密集/稀疏判据, 直线退化, 参数钳位.
-  - 深渲染: 三种规则下与点列渲染的墨迹覆盖率 $>0.9$ (7 组参数), 代价与步数无关, 深层级无空洞 (含科赫弧的 $j$ 到 15 级), 视口外剪枝后节点数与放大倍数解耦, 包围盒估计包含真实范围且不发散, 节点预算靠"变粗墨点"收尾而不是留空洞.
-  - 深渲染连续性: 科赫 $2^{30}$ / 龙 $2^{26}$ / $(2,5)$ $2^{24}$ 的光栅墨迹都是 **1 个连通块** (单笔画不断) —— 修复前是珠链式打点, 间距一大就断成多块 (用户截图实测: 2 块 + 77 个孔洞).
-  - 深模式与枚举模式观感一致: alpha 覆盖下两者平均颜色几乎相同 ($[133,200,120]$ vs $[134,199,122]$, 灰白像素 0% —— 加色叠加时会到 74%).
-  - GUI/控件: 参数输入框 (点击/键入/应用/取消) 驱动参数并钳位, 非法值标红且不改状态, `2^30`/`1.5e6` 解析, 镜头锚点缩放不漂移 (`window_zoom_and_pan_keep_anchors`), 重播与热替换的状态机, 参数栏与画布几何不重叠, 背景主题切换不动参数.
-  - GUI 绘制完整性 (实测截图): 2^15 / 2^16 / 2^17 / 2^18 / 2^20 / 2^22 步时曲线都横跨整个画布 (140..2164 / 2300 像素, 墨迹 24k-31k 像素); 修复前只有 10k 墨迹、只画出 2-3 段碎片 —— 根因是 Conf 里把批处理容量调到 200k 顶点, 超过默认容量后 macroquad 会丢批次几何, 现已改回默认值并在代码里写了注释.
-  - 主题: dark/light 各出一张 PNG + 一张 GIF, 采样角落像素确认背景真的换了 ((248,247,243) vs (4,5,11)); GUI 用 `--shot` 抓整窗截图核对参数栏/文字/乌龟标记都跟着换 (两套配色的文字对比度按 WCAG 相对亮度校验).
-  - 格式: PNG 的 CRC32/adler32 参考向量与容器结构, GIF 容器走查与 LZW 往返 (含码长增长与字典重置), CLI 错误参数退出码 2.
-- 独立 Python 交叉实现复现同一曲线: `(2,4) steps=131072` 的包围盒 $x[-127,511]$, $y[-255,383]$ 与 Rust 输出一致.
-- 光栅统计 (盒计数维度): 90 度/点的龙形 $D\approx 1.8$、四象限均有墨迹; 深渲染 $2^{50}$ 步的全幅视图 $D=1.81$、墨迹 15.2% (与 $2^{20}$ 步的 23.6%/1.81 同型); 直线与 $\text{dir}=1$ 的 $D=1.00$.
-- 动画链路: `ffprobe` 校验 `h264 800x600 24fps 96 帧 4.0s`; GIF 用 Pillow 实读校验 `720x540 40 帧 50ms loop=0` 且相邻帧确实在变化; 深模式 `anim --steps 2^50` 输出 PNG 帧序列且末帧有墨迹.
-- SVG: XML 解析器校验结构, macOS QuickLook 另渲染成 PNG 后重测得 $D\approx1.8$ (换渲染器仍是同一条分形).
-- GUI: `gui --frames 30` (enum) 与 `gui --steps 1125899906842624 --frames 20` (deep, 含纹理烘焙路径) 均正常起窗退出.
-
-复现量化检查:
-
-```bash
-uv run --with pillow --with numpy python3 ~/.codex/scripts/fractal_png_stats.py <某个导出 PNG>
-```
-
-## 6. 文件结构
-
-| 文件 | 职责 |
-|---|---|
-| `src/fractal.rs` | 核心规则: 参数钳位, 数字和, 朝向, $\zeta$ / 块前缀 / $S$ / 层级工具, 块恒等式与全部数学不变量测试 |
-| `src/deep.rs` | 自适应深渲染: 块树遍历 + 视口剪枝 + 像素截断 + 包围盒估计 |
-| `src/render.rs` | 软件光栅器 (Liang-Barsky 裁剪, 3x3 抗锯齿, **alpha 覆盖**与 GUI 一致), `View`/`Window` 相机, SVG 导出 |
-| `src/png.rs` | 零依赖 PNG 写出 (stored deflate, CRC32/adler32) |
-| `src/gif.rs` | 零依赖动画 GIF89a 写出 (256 色 + 32³ LUT 量化 + LZW) |
-| `src/scene.rs` | Manim 式关键帧场景: `State` 插值 + `draw`/`grow`/`tour` 脚本 |
-| `src/animate.rs` | 逐帧渲染 (enum 或 deep) 管道给 `ffmpeg`, 或写 GIF / PNG 序列 |
-| `src/main.rs` | CLI (`gui` / `render` / `anim`) 与参数解析 |
-| `src/gui.rs` | macroquad 交互窗口: 左右分栏 (控制栏 + 画布), 参数热改, 残影, 缩放平移, 深模式纹理烘焙, 主题联动 |
-| `src/ui.rs` | 控件层: 文本输入框 / 按钮 / 问号图标 + dark/light 主题 (含文字对比度校验) |
-| `tests/cli.rs` | 端到端: 二进制必须产出合法 PNG/SVG/GIF, 错误参数退出码 2 |
-
-## 7. 扩展点
-
-- 换规则: 只改 `fractal::heading(n, base, dir)`; 渲染/动画/交互/深渲染都只依赖块恒等式, 与具体转向规则无关.
-- 加相机运动: 在 `scene::build` 里为新 `Story` 追加关键帧 (时间, 缓动, `State` 的 `zoom`/`shift`).
-- 加输出格式: `render::Raster` 提供加色缓冲与 `downsample`, 可直接对接任何编码器.
